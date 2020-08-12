@@ -1,0 +1,407 @@
+---
+title: "Trabalho R - FGV"
+author: "Alberto Ricardo Camara Garrido"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Análise de Ações e Fundamentos de Empresas
+
+Esse programa tem o objetivo de facilitar a análise fundamentalista de qualquer empresa brasileira de capital aberto em bolsa. 
+O modo defaut está com a empresa MULTIPLAN, por interesse de quem escreveu o código, podendo ser alterada facilmente.
+(O código possui duas linhas no decorrer do seu Script nas quais se faz necessária uma manipulação própria da pessoa que tiver acesso, para que ela possa escolher a companhia que deseja analisar.
+Essas linhas estão sinalizadas com duas hashtags ##)
+
+
+``` {r }
+# É necessário instalar o pacote GetDFPData e qualquer outro pacote usado no código que você ainda não tenha instalado.
+# install.packages("GetDFPData")
+library(tidyverse)
+library(httr)
+library(plotly)
+library(GetDFPData)
+
+#Pegando os nomes e os tickers de todas as companhias listadas na bolsa de valores brasileira
+info <- gdfpd.get.info.companies(type.data = 'companies')
+tickers <- select(info, tickers)
+
+#Descobrindo o nome correto registrado na B3 da empresa que se deseja analisar 
+empresa <- gdfpd.search.company('multiplan') ## 1) Aqui você escreve apenas o primeiro nome da empresa de interesse 
+
+#Pegando todos os dados financeiros ANUAIS da empresa desde o consolidado de 2016.
+my.company <- empresa
+first.date <- '2016-12-30' #Essa é a data mínima, mas pode ser ajustada para uma data posterior da sua escolha 
+last.date <- Sys.Date()    #Data final da análise, que também pode ser modificada
+
+df.reports <- gdfpd.GetDFPData(name.companies = my.company,
+                               first.date = first.date,
+                               last.date = last.date)
+                               
+
+#Dados das ações da empresa
+
+#se necessário
+#install.packages('quantmod')
+library("quantmod")
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(plotly)
+
+#Transformando o nome da empresa desejada na string correta no Yahoo
+ticker <- df.reports$company.tickers
+ticker2 <- ".SA"
+ticker3 <- str_c(ticker, ticker2, sep="", collapse = NULL)
+
+getSymbols(ticker3, src = "yahoo" , from = first.date, to = last.date) 
+
+dv <- data.frame(Date = index(MULT3.SA), MULT3.SA[,1:4]) ## 2) Aqui é necessário que a pessoa escreva (NÃO COMO UMA STRING) o ticker da ação da empresa que será dado por ticker3
+
+
+#Plotando o Candlestick Chart da ação
+g1 <- dv %>% plot_ly(
+  type = "candlestick",
+  x = ~Date, 
+  open = dv[,2], high = dv[,3], low = dv[,4], close = dv[,5],
+  name = "candles")
+
+g1 <- g1 %>% layout(
+  title = ticker,
+  xaxis = list(
+    rangeselector = list(
+      buttons = list(
+        list(
+          count = 3,
+          label = "3 mo",
+          step = "month",
+          stepmode = "backward"), #ao clicar nesse botão o gráfico plota os dados diários dos últimos 3 mêses.
+        list(
+          count = 6,
+          label = "6 mo",
+          step = "month",
+          stepmode = "backward"),  #ao clicar nesse botão o gráfico plota os valores diários dos últimos 6 mêses.
+        list(
+          count = 1,
+          label = "1 yr",
+          step = "year",
+          stepmode = "backward"),  #ao clicar nesse botão o gráfico plota os valores diários dos últimos 12 mêses
+        list(
+          count = 1,
+          label = "YTD",
+          step = "year",
+          stepmode = "todate"),  #ao clicar nesse botão o gráfico plota os valores diários desde o início do ano
+        list(step = "all"))), #ao clicar nesse botão o gráfico plota os valores diários desde a data que você escolheu em first.date
+    
+    rangeslider = list(type = "date")), #barra na região inferior ao gráfico na qual você pode regular o intervalo do período em que os dados estão sendo mostrados no gráfico.
+  
+  yaxis = list(title = "Price"))
+g1
+
+#Dados financeiros da empresa
+
+#Analisando o Balanço de Pagamentos da empresa
+
+#Extraindo dados dos Ativos da empresa
+assets <- select(df.reports, fr.assets.consolidated)
+assets <- assets[[1]][[1]]
+
+assets <- select(assets, ref.date, acc.desc, acc.value)
+
+#Ativo Total
+ativo_t <- assets %>%
+  filter(acc.desc == "Ativo Total")
+ativo_t <- ativo_t[,-2]
+
+#Ativo Circulante
+ativo_c <- assets %>%
+  filter(acc.desc == "Ativo Circulante")
+ativo_c <- ativo_c[,-2]
+
+#Caixa e Equivalente de Caixa
+caixa_ec <- assets %>%
+  filter(acc.desc == "Caixa e Equivalentes de Caixa")
+caixa_ec <- caixa_ec[,-2]
+
+#Ativo Não Circulante 
+ativo_nc <- assets %>%
+  filter(acc.desc == "Ativo Não Circulante")
+ativo_nc <- ativo_nc[,-2]
+
+#Extraindo dados do Passivo e Patrimônio Líquido
+lia <- select(df.reports, fr.liabilities.consolidated)
+lia <- lia[[1]][[1]]
+
+lia <- select(lia, ref.date, acc.desc, acc.value)
+
+#Patrimônio Líquido Consolidado
+patri_liq <- lia %>%
+  filter(acc.desc == "Patrimônio Líquido Consolidado")
+patri_liq <- patri_liq[,-2]
+
+#Passivo Total
+passivo_t <- lia %>%
+  filter(acc.desc == "Passivo Total")
+passivo_t <- passivo_t[,-2]
+passivo_t[2] = passivo_t[2] - patri_liq[2]
+
+#Passivo Circulante
+passivo_c <- lia %>%
+  filter(acc.desc == "Passivo Circulante")
+passivo_c <- passivo_c[,-2]
+
+#Passivo Nào Circulante
+passivo_nc <- lia %>%
+  filter(acc.desc == "Passivo Não Circulante")
+passivo_nc <- passivo_nc[,-2]
+
+#Analisando a DRE da empresa
+dre <- select(df.reports, fr.income.consolidated)
+dre <- dre[[1]][[1]]
+
+dre <- select(dre, ref.date, acc.desc, acc.value)
+
+#Receita de Vendas de Bens e/ou Serviços 
+receita_vbs <- dre %>%
+  filter(acc.desc == "Receita de Venda de Bens e/ou Serviços")
+receita_vbs <- receita_vbs[,-2]
+
+#Custos dos Bens e/ou Serviços 
+custo_bs <- dre %>%
+  filter(acc.desc == "Custo dos Bens e/ou Serviços Vendidos")
+custo_bs <- custo_bs[,-2]
+
+#Resultado Bruto 
+resultado_b <- dre %>%
+  filter(acc.desc == "Resultado Bruto")
+resultado_b <- resultado_b[,-2]
+
+#EBIT
+ebit <- dre %>%
+  filter(acc.desc == "Resultado Antes do Resultado Financeiro e dos Tributos")
+ebit <- ebit[,-2]
+
+#Depreciação/Amortização 
+
+value <- select(df.reports, fr.value.consolidated)
+value <- value[[1]][[1]]
+
+value <- select(value, ref.date, acc.desc, acc.value)
+
+deprec <- value %>%
+  filter(acc.desc == "Depreciação, Amortização e Exaustão")
+deprec <- deprec[,-2]
+
+#Lucro/Prejuízo do período 
+lpp <- dre %>%
+  filter(acc.desc == "Lucro/Prejuízo Consolidado do Período")
+lpp<- lpp[,-2]             
+
+#Analisando o DFC da empresa 
+dfc <- select(df.reports, fr.cashflow.consolidated)
+dfc <- dfc[[1]][[1]]
+
+dfc <- select(dfc, ref.date, acc.desc, acc.value)
+
+#Caixa Líquido Atividades Operacionais
+caixa_liq_ativ_op <- dfc %>%
+  filter(acc.desc == "Caixa Líquido Atividades Operacionais")
+caixa_liq_ativ_op <- caixa_liq_ativ_op[,-2]
+
+#Saldo Final de Caixa e Equivalentes
+saldo <- dfc %>%
+  filter(acc.desc == "Saldo Final de Caixa e Equivalentes")
+saldo <- saldo[,-2]
+
+#
+#Gráfico correspondente aos dados do ATIVO, PASSIVO e PATRIMÔNIO LÍQUIDO
+
+g2 <- plot_ly()
+g2 <- g2 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = patri_liq$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgba(26, 118, 255, 0.8)'
+  ),
+  name = 'Patrimônio Líquido'
+)
+g2 <- g2 %>% add_bars(
+  x = c("2016","2017","2018","2019"),
+  y = ativo_c$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgb(7,40,89)'
+  ),
+  name = 'Ativo Circulante'
+)
+g2 <- g2 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = ativo_nc$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgba(50, 171, 96, 1.0)'
+  ),
+  name = 'Ativo Não Circ.'
+)
+g2 <- g2 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = passivo_c$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgba(222,45,38,0.8)'
+  ),
+  name = 'Passivo Circulante'
+)
+g2 <- g2 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = passivo_nc$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = "orange"
+  ),
+  name = 'Passivo Não Circ.'
+)
+g2 <- g2 %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = ativo_t$acc.value * (1000),
+  line = list(color = 'rgba(55, 128, 191, 0.7)'),
+  marker = list(
+    color = 'rgba(55, 128, 191, 0.7)'
+  ),
+  name = 'Ativos'
+)
+g2 <- g2 %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = passivo_t$acc.value * (1000),
+  line = list(color = 'rgba(222,45,38,1.0)'),
+  marker = list(
+    color = 'rgba(222,45,38,1.0)'
+  ),
+  name = 'Passivos'
+)
+g2 <- g2 %>% layout(
+  title = "Balanço de Pagamentos")
+
+#Melhorando a visualização do gráfico com um espaçamento maior 
+
+vetor_vazio <- c(0,0,0,0)
+
+g2 <- g2 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = vetor_vazio,
+  base = 0,
+  marker = list(
+    color = "white"
+  ),
+  width = 1.5,
+  name = ''
+)
+
+g2
+
+#Gráfico correspondente aos dados da DRE
+g3 <- plot_ly()
+
+g3 <- g3 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = receita_vbs$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgba(50, 171, 96, 0.7)'
+  ),
+  name = 'Receita Líquida'
+)
+
+g3 <- g3 %>% add_bars(
+  x = c("2016", "2017", "2018", "2019"),
+  y = custo_bs$acc.value * (1000),
+  base = 0,
+  marker = list(
+    color = 'rgba(219, 64, 82, 0.7)'
+  ),
+  name = 'Custos'
+)
+
+
+g3 <- g3 %>% layout(barmode = 'stack')
+
+g3 <- g3 %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = lpp$acc.value * (1000),
+  line = list(color = 'rgb(22, 96, 167)'),
+  marker = list(
+    color = 'rgb(204,204,204)'
+  ),
+  name = 'Lucro/Prejuízo do Período'
+)
+g3 <- g3 %>% layout(
+  title = "Demonstração de Resultados")
+
+g3
+
+#Margens da empresa
+marg_bru <- dre %>%
+  filter(acc.desc == "Resultado Bruto")
+marg_bru <- marg_bru[,-2]
+marg_bru[2] = resultado_b[2]/receita_vbs[2]
+
+marg_liq <- dre %>%
+  filter(acc.desc == "Lucro/Prejuízo Consolidado do Período")
+marg_liq <- marg_liq[,-2]
+marg_liq[2] = lpp[2]/receita_vbs[2]
+
+marg_ebit <- dre %>%
+  filter(acc.desc == "Resultado Antes do Resultado Financeiro e dos Tributos")
+marg_ebit <- marg_ebit[,-2]
+marg_ebit[2] = ebit[2]/receita_vbs[2]
+
+#Gráfico Margens
+marg <- plot_ly()
+
+marg <- marg %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = marg_bru$acc.value,
+  line = list(color = 'rgba(50, 171, 96, 1.0)'),
+  marker = list(
+    color = 'rgb(204,204,204)'
+  ),
+  name = 'Margem Bruta'
+)
+
+marg <- marg %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = marg_liq$acc.value,
+  line = list(color = 'rgb(22, 96, 167)'),
+  marker = list(
+    color = 'rgb(204,204,204)'
+  ),
+  name = 'Margem Líquida'
+)
+
+marg <- marg %>% add_lines(
+  x = c("2016", "2017", "2018", "2019"),
+  y = marg_ebit$acc.value,
+  line = list(color = "orange"),
+  marker = list(
+    color = 'rgb(204,204,204)'
+  ),
+  name = 'Margem Ebit'
+)
+
+marg <- marg %>% layout(
+  title = "Margens")
+marg
+
+```
+## Referências:
+
+https://rpubs.com/phsg13/544147
+https://www.msperlin.com/shiny/GetDFPData/
+https://plotly.com/r/candlestick-charts/
+https://plotly.com/r/bar-charts/
+https://www.quantmod.com/examples/
+http://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/renda-variavel/empresas-listadas.htm
+
